@@ -16,6 +16,10 @@ import { seedListings } from './seed.js'
 const PORT = process.env.PORT || 4000
 const JWT_SECRET = process.env.JWT_SECRET || 'urban-exchange-dev-secret'
 const GEOCODER_USER_AGENT = process.env.GEOCODER_USER_AGENT || 'urban-waste-exchange-demo/1.0'
+const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
 
 const materialRates = {
   'PET Plastic': 18,
@@ -56,15 +60,26 @@ const transactionStatuses = ['not_started', 'pending', 'paid']
 const fallbackImage =
   'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=900&q=80'
 
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || FRONTEND_ORIGINS.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error('Origin not allowed by CORS'))
+  },
+}
+
 const app = express()
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
   cors: {
-    origin: '*',
+    origin: FRONTEND_ORIGINS,
   },
 })
 
-app.use(cors())
+app.use(cors(corsOptions))
 app.use(express.json({ limit: '8mb' }))
 
 function parseNumber(value) {
@@ -1109,5 +1124,8 @@ startServer().catch((error) => {
   console.error(error)
   process.exit(1)
 })
+
+
+
 
 

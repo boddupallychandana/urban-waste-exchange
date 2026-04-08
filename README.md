@@ -35,6 +35,10 @@ Create a `.env` file from `.env.example` and set your values:
 MONGO_URI=mongodb://127.0.0.1:27017/urban_waste_exchange
 PORT=4000
 JWT_SECRET=replace-with-a-long-random-secret
+GEOCODER_USER_AGENT=urban-waste-exchange-demo/1.0
+FRONTEND_ORIGINS=http://localhost:5173
+VITE_API_BASE_URL=
+VITE_SOCKET_URL=
 ```
 
 You can also use MongoDB Atlas by replacing `MONGO_URI` with your cluster connection string.
@@ -58,6 +62,8 @@ The app expects:
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:4000`
 - MongoDB: available through `MONGO_URI`
+
+For local development, leave `VITE_API_BASE_URL` and `VITE_SOCKET_URL` empty so Vite can proxy `/api` and `/socket.io` to the backend.
 
 Build for production:
 
@@ -115,6 +121,12 @@ GET /api/listings?lat=12.9352&lng=77.6245&radiusKm=5&status=available
 - `PATCH /api/listings/:id/transaction` records an offline transaction such as cash, bank transfer, or cheque for the assigned recycler
 - `PATCH /api/listings/:id/transaction/confirm` lets the seller confirm receipt after a payment is marked paid
 - `GET /api/listings/:id/receipt` downloads a plain-text settlement receipt for the seller, assigned recycler, or admin
+
+## Deployment Notes
+
+- On Render, set `FRONTEND_ORIGINS` to a comma-separated allowlist such as `http://localhost:5173,https://your-site.netlify.app`
+- On Netlify, set `VITE_API_BASE_URL` to your Render backend URL, for example `https://urban-waste-exchange.onrender.com`
+- If you want Socket.IO to use a different host, set `VITE_SOCKET_URL`; otherwise it reuses `VITE_API_BASE_URL`
 
 ## Next Enhancements
 

@@ -4,6 +4,9 @@ import { io } from 'socket.io-client'
 import MarketplaceMap from './components/MarketplaceMap.jsx'
 import './App.css'
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API_BASE_URL).replace(/\/$/, '')
+
 const fallbackMaterials = [
   { name: 'PET Plastic', family: 'Plastic', ratePerKg: 18 },
   { name: 'HDPE Plastic', family: 'Plastic', ratePerKg: 24 },
@@ -34,7 +37,11 @@ const emptyAuthForm = {
   role: 'seller',
 }
 
-const socket = io({ autoConnect: false })
+const socket = io(SOCKET_URL || undefined, { autoConnect: false })
+
+function apiUrl(path) {
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path
+}
 
 function formatTime(value) {
   return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -67,7 +74,7 @@ function formatTransactionLabel(value) {
 }
 
 async function reverseGeocode(lat, lng) {
-  const response = await fetch(`/api/geocode/reverse?lat=${lat}&lng=${lng}`)
+  const response = await fetch(apiUrl(`/api/geocode/reverse?lat=${lat}&lng=${lng}`))
   const payload = await response.json()
   if (!response.ok) throw new Error(payload.message || 'Reverse geocoding failed.')
   return payload
@@ -105,7 +112,7 @@ function App() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [metaResponse, listingsResponse] = await Promise.all([fetch('/api/meta'), fetch('/api/listings')])
+        const [metaResponse, listingsResponse] = await Promise.all([fetch(apiUrl('/api/meta')), fetch(apiUrl('/api/listings'))])
         const metaPayload = await metaResponse.json()
         const listingsPayload = await listingsResponse.json()
         setMaterials(metaPayload.materials)
@@ -152,7 +159,7 @@ function App() {
 
     async function loadSession() {
       try {
-        const response = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${authToken}` } })
+        const response = await fetch(apiUrl('/api/auth/me'), { headers: { Authorization: `Bearer ${authToken}` } })
         if (!response.ok) throw new Error('Session expired')
         const payload = await response.json()
         setCurrentUser(payload.user)
@@ -179,7 +186,7 @@ function App() {
     async function loadNotifications() {
       setNotificationsLoading(true)
       try {
-        const response = await fetch('/api/notifications/my', { headers: { Authorization: `Bearer ${authToken}` } })
+        const response = await fetch(apiUrl('/api/notifications/my'), { headers: { Authorization: `Bearer ${authToken}` } })
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.message || 'Could not load notifications.')
         setNotifications(payload)
@@ -201,7 +208,7 @@ function App() {
     async function loadSavedRoutes() {
       setSavedRoutesLoading(true)
       try {
-        const response = await fetch('/api/routes/my', { headers: { Authorization: `Bearer ${authToken}` } })
+        const response = await fetch(apiUrl('/api/routes/my'), { headers: { Authorization: `Bearer ${authToken}` } })
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.message || 'Could not load saved routes.')
         setSavedRoutes(payload)
@@ -224,7 +231,7 @@ function App() {
     async function loadAdminOverview() {
       setAdminLoading(true)
       try {
-        const response = await fetch('/api/admin/overview', { headers: { Authorization: `Bearer ${authToken}` } })
+        const response = await fetch(apiUrl('/api/admin/overview'), { headers: { Authorization: `Bearer ${authToken}` } })
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.message || 'Could not load admin dashboard.')
         setAdminOverview(payload)
@@ -298,7 +305,7 @@ function App() {
     }
     setClassifyingImage(true)
     try {
-      const response = await fetch('/api/classify-waste', {
+      const response = await fetch(apiUrl('/api/classify-waste'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ fileName: imageMeta?.fileName, title: listingForm.title, notes: listingForm.notes, imageUrl: listingForm.imageUrl }),
@@ -377,7 +384,7 @@ function App() {
     try {
       const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login'
       const body = authMode === 'register' ? authForm : { email: authForm.email, password: authForm.password }
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const response = await fetch(apiUrl(endpoint), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.message || 'Authentication failed.')
       localStorage.setItem('urban-exchange-token', payload.token)
@@ -416,7 +423,7 @@ function App() {
     }
     setSubmitting(true)
     try {
-      const response = await fetch('/api/listings', {
+      const response = await fetch(apiUrl('/api/listings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ ...listingForm, aiClassification, coordinates: { lat: Number(listingForm.coordinates.lat), lng: Number(listingForm.coordinates.lng) } }),
@@ -441,7 +448,7 @@ function App() {
     }
     setActiveClaimId(listingId)
     try {
-      const response = await fetch(`/api/listings/${listingId}/claim`, { method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` } })
+      const response = await fetch(apiUrl(`/api/listings/${listingId}/claim`), { method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` } })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.message || 'Claim failed')
     } catch (error) {
@@ -453,7 +460,7 @@ function App() {
 
   async function handleComplete(listingId) {
     try {
-      const response = await fetch(`/api/listings/${listingId}/complete`, { method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` } })
+      const response = await fetch(apiUrl(`/api/listings/${listingId}/complete`), { method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` } })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.message || 'Completion failed.')
       setRecyclerLocationStatus('Pickup marked as completed. Payment status moved to pending settlement.')
@@ -465,7 +472,7 @@ function App() {
   async function handleMarkNotificationRead(notificationId) {
     if (!authToken) return
     try {
-      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+      const response = await fetch(apiUrl(`/api/notifications/${notificationId}/read`), {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${authToken}` },
       })
@@ -480,7 +487,7 @@ function App() {
     if (!authToken) return
 
     try {
-      const response = await fetch(`/api/listings/${listing.id}/receipt`, {
+      const response = await fetch(apiUrl(`/api/listings/${listing.id}/receipt`), {
         headers: { Authorization: `Bearer ${authToken}` },
       })
 
@@ -508,7 +515,7 @@ function App() {
     if (!authToken || currentUser?.role !== 'seller') return
 
     try {
-      const response = await fetch(`/api/listings/${listing.id}/transaction/confirm`, {
+      const response = await fetch(apiUrl(`/api/listings/${listing.id}/transaction/confirm`), {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${authToken}` },
       })
@@ -547,7 +554,7 @@ function App() {
     if (notes == null) return
 
     try {
-      const response = await fetch(`/api/listings/${listing.id}/transaction`, {
+      const response = await fetch(apiUrl(`/api/listings/${listing.id}/transaction`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ amount, paymentMethod, paymentStatus, notes }),
@@ -575,7 +582,7 @@ function App() {
       return
     }
     try {
-      const response = await fetch('/api/routes/optimize', {
+      const response = await fetch(apiUrl('/api/routes/optimize'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ start: recyclerCoordinates, listingIds: routeListingIds, filters }),
@@ -607,7 +614,7 @@ function App() {
     const nextName = nextFavorite ? window.prompt('Name this favorite route template:', route.name || 'Morning pickup circuit')?.trim() : ''
     if (nextFavorite && !nextName) return
     try {
-      const response = await fetch(`/api/routes/${route.id}/favorite`, {
+      const response = await fetch(apiUrl(`/api/routes/${route.id}/favorite`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ isFavorite: nextFavorite, name: nextName }),
@@ -633,7 +640,7 @@ function App() {
     if (!authToken || currentUser?.role !== 'admin') return
     const adminNotes = window.prompt('Optional admin note for this moderation action:', '') ?? ''
     try {
-      const response = await fetch(`/api/admin/listings/${listingId}/moderate`, {
+      const response = await fetch(apiUrl(`/api/admin/listings/${listingId}/moderate`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ moderationStatus, adminNotes }),
