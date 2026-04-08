@@ -283,15 +283,13 @@ const listingSchema = new mongoose.Schema(
 
 listingSchema.index({ geoLocation: '2dsphere' })
 
-listingSchema.pre('validate', function syncGeoLocation(next) {
+listingSchema.pre('validate', function syncGeoLocation() {
   if (this.coordinates?.lat != null && this.coordinates?.lng != null) {
     this.geoLocation = {
       type: 'Point',
       coordinates: [this.coordinates.lng, this.coordinates.lat],
     }
   }
-
-  next()
 })
 
 export const Listing = mongoose.model('Listing', listingSchema)
