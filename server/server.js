@@ -1,4 +1,4 @@
-﻿import 'dotenv/config'
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import bcrypt from 'bcryptjs'
@@ -1071,7 +1071,8 @@ io.on('connection', async (socket) => {
   }
 })
 
-app.use((error, _req, res) => {
+app.use((error, _req, res, next) => {
+  void next
   console.error(error)
   res.status(500).json({ message: 'Internal server error.' })
 })
@@ -1108,4 +1109,5 @@ startServer().catch((error) => {
   console.error(error)
   process.exit(1)
 })
+
 
