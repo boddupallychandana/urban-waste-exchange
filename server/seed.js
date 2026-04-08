@@ -1,0 +1,67 @@
+export const seedListings = [
+  {
+    sellerName: 'Anaya Foods',
+    sellerPhone: '+91 98765 11001',
+    title: 'Clean cardboard from weekly deliveries',
+    material: 'Cardboard',
+    family: 'Paper',
+    weightKg: 42,
+    locality: 'Indiranagar',
+    city: 'Bengaluru',
+    imageUrl:
+      'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=900&q=80',
+    notes: 'Stored dry and tied in bundles. Pickup preferred before Friday.',
+    estimatedValue: 504,
+    status: 'available',
+    createdAt: new Date(Date.now() - 1000 * 60 * 45),
+    coordinates: {
+      lat: 12.9784,
+      lng: 77.6408,
+    },
+  },
+  {
+    sellerName: 'Rohit Sharma',
+    sellerPhone: '+91 98765 22002',
+    title: 'Used PET bottles from apartment collection drive',
+    material: 'PET Plastic',
+    family: 'Plastic',
+    weightKg: 18,
+    locality: 'HSR Layout',
+    city: 'Bengaluru',
+    imageUrl:
+      'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=900&q=80',
+    notes: 'Washed, labels mostly removed.',
+    estimatedValue: 324,
+    status: 'claimed',
+    createdAt: new Date(Date.now() - 1000 * 60 * 160),
+    coordinates: {
+      lat: 12.9116,
+      lng: 77.6474,
+    },
+    claimedBy: {
+      name: 'GreenLoop Recyclers',
+      phone: '+91 99881 11009',
+      claimedAt: new Date(Date.now() - 1000 * 60 * 18),
+    },
+  },
+  {
+    sellerName: 'TechHub Workspace',
+    sellerPhone: '+91 98765 33003',
+    title: 'Mixed office e-waste lot',
+    material: 'Mixed E-Waste',
+    family: 'E-Waste',
+    weightKg: 27,
+    locality: 'Koramangala',
+    city: 'Bengaluru',
+    imageUrl:
+      'https://images.unsplash.com/photo-1581092335878-5d9ff86ca2bf?auto=format&fit=crop&w=900&q=80',
+    notes: 'Includes keyboards, chargers, and damaged routers.',
+    estimatedValue: 1485,
+    status: 'available',
+    createdAt: new Date(Date.now() - 1000 * 60 * 90),
+    coordinates: {
+      lat: 12.9352,
+      lng: 77.6245,
+    },
+  },
+]
