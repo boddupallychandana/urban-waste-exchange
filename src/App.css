@@ -261,6 +261,100 @@ textarea:focus {
   margin-top: 0.35rem;
 }
 
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid rgba(34, 57, 42, 0.1);
+  border-radius: 28px;
+  background: rgba(250, 247, 239, 0.9);
+  box-shadow: 0 24px 60px rgba(60, 72, 42, 0.08);
+}
+
+.brand-block,
+.session-rail {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.route-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.nav-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.8rem;
+  padding: 0.8rem 1rem;
+  border-radius: 999px;
+  background: rgba(15, 78, 58, 0.08);
+  color: #0f4e3a;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav-pill.active {
+  background: linear-gradient(135deg, #0f4e3a, #267756);
+  color: #f7f2e8;
+}
+
+.compact-button {
+  margin-top: 0;
+}
+
+.auth-page-grid,
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+
+.dashboard-grid.seller-dashboard {
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.8fr);
+}
+
+.dashboard-grid.recycler-dashboard {
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.85fr);
+}
+
+.dashboard-hero .hero-copy h1 {
+  max-width: 15ch;
+}
+
+.role-card-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.role-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  border-radius: 20px;
+  background: #eef3e8;
+  color: #234431;
+}
+
+@media (max-width: 980px) {
+  .auth-page-grid,
+  .dashboard-grid,
+  .dashboard-grid.seller-dashboard,
+  .dashboard-grid.recycler-dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .top-nav {
+    align-items: start;
+  }
+}
+
 .helper-line {
   margin: 0.85rem 0 0;
   font-size: 0.9rem;
