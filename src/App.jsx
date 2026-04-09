@@ -82,6 +82,37 @@ function formatTransactionLabel(value) {
   return value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
+function isValidPhone(value) {
+  return /^[0-9+\-\s()]{10,15}$/.test(String(value || '').trim())
+}
+
+function isValidCoordinate(lat, lng) {
+  const parsedLat = Number(lat)
+  const parsedLng = Number(lng)
+  return Number.isFinite(parsedLat) && Number.isFinite(parsedLng) && parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180
+}
+
+function validateAuthForm(authMode, authForm) {
+  if (!isValidEmail(authForm.email)) return 'Enter a valid email address.'
+  if ((authForm.password || '').length < 6) return 'Password must be at least 6 characters long.'
+  if (authMode === 'register') {
+    if ((authForm.name || '').trim().length < 3) return 'Full name must be at least 3 characters long.'
+    if (!isValidPhone(authForm.phone)) return 'Enter a valid 10 to 15 digit phone number.'
+  }
+  return ''
+}
+
+function validateListingForm(listingForm) {
+  if ((listingForm.title || '').trim().length < 5) return 'Listing title must be at least 5 characters long.'
+  if (!Number.isFinite(Number(listingForm.weightKg)) || Number(listingForm.weightKg) <= 0) return 'Weight must be greater than 0 kg.'
+  if (!isValidCoordinate(listingForm.coordinates?.lat, listingForm.coordinates?.lng)) return 'Enter valid latitude and longitude values before publishing.'
+  return ''
+}
+
 async function reverseGeocode(lat, lng) {
   const response = await fetch(apiUrl(`/api/geocode/reverse?lat=${lat}&lng=${lng}`))
   const payload = await response.json()
@@ -225,12 +256,15 @@ function AuthPage({ authMode, authForm, setAuthForm, setAuthMode, handleAuthSubm
   )
 }
 
-function NotificationsPanel({ notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead }) {
+function NotificationsPanel({ notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, handleMarkAllNotificationsRead }) {
   return (
     <section className="panel notification-panel">
       <div className="panel-heading">
         <div><span className="section-kicker">Inbox</span><h2>Notifications</h2></div>
-        <span className="status-pill">{notificationsLoading ? 'Loading...' : `${unreadNotifications} unread`}</span>
+        <div className="panel-heading-actions">
+          <span className="status-pill">{notificationsLoading ? 'Loading...' : `${unreadNotifications} unread`}</span>
+          {unreadNotifications ? <button type="button" className="ghost-button compact-button" onClick={handleMarkAllNotificationsRead}>Mark all read</button> : null}
+        </div>
       </div>
       <div className="notification-list">
         {notifications.length ? notifications.map((notification) => (
@@ -243,6 +277,112 @@ function NotificationsPanel({ notifications, notificationsLoading, unreadNotific
             {!notification.readAt ? <button type="button" className="ghost-button" onClick={() => handleMarkNotificationRead(notification.id)}>Mark read</button> : null}
           </div>
         )) : <p className="muted-text">No notifications yet.</p>}
+      </div>
+    </section>
+  )
+}
+
+function SellerActivityPanel({ sellerListings }) {
+  const activityItems = sellerListings
+    .flatMap((listing) => {
+      const events = []
+      if (listing.claimedBy?.claimedAt) {
+        events.push({
+          id: `${listing.id}-claimed`,
+          timestamp: listing.claimedBy.claimedAt,
+          title: 'Pickup claimed',
+          description: `${listing.claimedBy.name} claimed ${listing.title}${listing.claimedBy.pickupTime ? ` for ${formatTime(listing.claimedBy.pickupTime)}` : ''}.`,
+        })
+      }
+      if (listing.status === 'completed') {
+        events.push({
+          id: `${listing.id}-completed`,
+          timestamp: listing.updatedAt || listing.createdAt,
+          title: 'Pickup completed',
+          description: `${listing.title} has been marked as picked up and is waiting for settlement updates.`,
+        })
+      }
+      if (listing.transaction?.recordedAt) {
+        events.push({
+          id: `${listing.id}-transaction`,
+          timestamp: listing.transaction.recordedAt,
+          title: 'Payment recorded',
+          description: `${formatCurrency(listing.transaction.amount || 0)} was recorded as ${formatTransactionLabel(listing.transaction.paymentStatus || 'not_started')} for ${listing.title}.`,
+        })
+      }
+      if (listing.transaction?.sellerConfirmedAt) {
+        events.push({
+          id: `${listing.id}-confirmed`,
+          timestamp: listing.transaction.sellerConfirmedAt,
+          title: 'Receipt confirmed',
+          description: `You confirmed receipt for ${listing.title}.`,
+        })
+      }
+      return events
+    })
+    .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp))
+    .slice(0, 8)
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div><span className="section-kicker">Seller history</span><h2>Recent seller activity</h2></div>
+        <span className="status-pill">{activityItems.length} recent events</span>
+      </div>
+      <div className="notification-list">
+        {activityItems.length ? activityItems.map((item) => (
+          <div key={item.id} className="notification-card notification-read">
+            <div>
+              <strong>{item.title}</strong>
+              <span>{item.description}</span>
+              <span className="muted-text">{formatTime(item.timestamp)}</span>
+            </div>
+          </div>
+        )) : <p className="muted-text">Seller activity will appear here after your listings are claimed or settled.</p>}
+      </div>
+    </section>
+  )
+}
+
+function TransactionHistoryPage({ currentUser, transactionHistory, transactionHistoryLoading, handleDownloadReceipt }) {
+  return (
+    <section className="feed-section">
+      <div className="feed-header">
+        <div>
+          <span className="section-kicker">Settlements</span>
+          <h2>Transaction history</h2>
+          <p>Review every recorded offline settlement for your current role and download receipts when needed.</p>
+        </div>
+        <span className="status-pill">{transactionHistoryLoading ? 'Loading...' : `${transactionHistory.length} records`}</span>
+      </div>
+      <div className="listing-grid">
+        {transactionHistory.length ? transactionHistory.map((listing) => (
+          <article key={listing.id} className="listing-card transaction-history-card">
+            <img src={listing.imageUrl} alt={listing.title} />
+            <div className="listing-body">
+              <div className="card-topline">
+                <span className={`status-tag ${listing.status}`}>{listing.status}</span>
+                <span>{formatTime(listing.transaction?.recordedAt || listing.updatedAt || listing.createdAt)}</span>
+              </div>
+              <h3>{listing.title}</h3>
+              <p className="location-line">{listing.addressLabel || `${listing.locality}, ${listing.city}`}</p>
+              <div className="listing-metrics">
+                <span>{listing.material}</span>
+                <span>{formatCurrency(listing.transaction?.amount || 0)}</span>
+                <span>{formatTransactionLabel(listing.transaction?.paymentStatus || 'not_started')}</span>
+              </div>
+              <div className="contact-block seller-detail-block">
+                <strong>Settlement details</strong>
+                <span>Seller: {listing.sellerName}</span>
+                <span>Recycler: {listing.claimedBy?.name || 'Not assigned'}</span>
+                <span>Method: {formatTransactionLabel(listing.transaction?.paymentMethod || 'cash')}</span>
+                {listing.transaction?.notes ? <span>Notes: {listing.transaction.notes}</span> : null}
+                {listing.transaction?.sellerConfirmedAt ? <span>Seller confirmed on {formatTime(listing.transaction.sellerConfirmedAt)}</span> : null}
+              </div>
+              {currentUser ? <div className="card-actions"><button type="button" className="ghost-button" onClick={() => handleDownloadReceipt(listing)}>Download receipt</button></div> : null}
+            </div>
+          </article>
+        )) : <p className="muted-text">No transaction history yet for this role.</p>}
       </div>
     </section>
   )
@@ -320,7 +460,7 @@ function ListingFeed({ title, kicker, description, listings, currentUser, active
 }
 
 function SellerPage(props) {
-  const { currentUser, materials, listingForm, setListingForm, imageMeta, aiClassification, classifyingImage, sellerLocationStatus, handleSubmit, handleCaptureSellerLocation, handlePhotoUpload, handleAnalyzeWaste, handleApplyAiSuggestion, submitting, estimatedPayout, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, sellerListings, sellerMetrics, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
+  const { currentUser, materials, listingForm, setListingForm, imageMeta, aiClassification, classifyingImage, sellerLocationStatus, handleSubmit, handleCaptureSellerLocation, handlePhotoUpload, handleAnalyzeWaste, handleApplyAiSuggestion, submitting, estimatedPayout, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, handleMarkAllNotificationsRead, sellerListings, sellerMetrics, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
 
   return (
     <>
@@ -385,7 +525,8 @@ function SellerPage(props) {
           </form>
         </article>
 
-        <NotificationsPanel notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} />
+        <NotificationsPanel notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleMarkAllNotificationsRead={handleMarkAllNotificationsRead} />
+        <SellerActivityPanel sellerListings={sellerListings} />
       </section>
 
       <ListingFeed title="Your seller-facing listing feed" kicker="Seller feed" description="Track your own listings, claimed pickups, and payment confirmations in real time." listings={sellerListings} currentUser={currentUser} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} />
@@ -394,7 +535,7 @@ function SellerPage(props) {
 }
 
 function RecyclerPage(props) {
-  const { currentUser, filters, setFilters, families, localities, recyclerLocationStatus, handleCaptureRecyclerLocation, routeCandidates, routePlan, handleGenerateRoute, savedRoutes, favoriteRoutes, savedRoutesLoading, handleLoadSavedRoute, handleToggleFavorite, filteredListings, recyclerCoordinates, recyclerMetrics, recyclerScopedLoading, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
+  const { currentUser, filters, setFilters, families, localities, recyclerLocationStatus, handleCaptureRecyclerLocation, routeCandidates, routePlan, handleGenerateRoute, savedRoutes, favoriteRoutes, savedRoutesLoading, handleLoadSavedRoute, handleToggleFavorite, filteredListings, recyclerCoordinates, recyclerMetrics, recyclerScopedLoading, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, handleMarkAllNotificationsRead, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
 
   return (
     <>
@@ -456,13 +597,13 @@ function RecyclerPage(props) {
         <article className="panel map-panel"><div className="panel-heading"><div><span className="section-kicker">Map view</span><h2>Marketplace geospatial feed</h2></div><span className="value-chip">{filteredListings.length} visible listings</span></div><MarketplaceMap listings={filteredListings} recyclerCoordinates={recyclerCoordinates} selectedRadiusKm={Number(filters.radiusKm) || 5} /></article>
       </section>
 
-      <NotificationsPanel notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} />
+      <NotificationsPanel notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleMarkAllNotificationsRead={handleMarkAllNotificationsRead} />
       <ListingFeed title="Recycler pickup feed" kicker="Recycler feed" description="Claim materials, update pickup status, and record traditional transactions from one operational queue." listings={filteredListings} currentUser={currentUser} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} />
     </>
   )
 }
 
-function AdminPage({ adminOverview, adminLoading, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, handleModerateListing, filteredListings, adminMetrics, currentUser, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt }) {
+function AdminPage({ adminOverview, adminLoading, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, handleMarkAllNotificationsRead, handleModerateListing, filteredListings, adminMetrics, currentUser, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt }) {
   return (
     <>
       <section className="hero-panel dashboard-hero">
@@ -516,7 +657,7 @@ function AdminPage({ adminOverview, adminLoading, notifications, notificationsLo
         <div className="admin-card"><h3>Listing moderation queue</h3><div className="admin-list">{(adminOverview?.listings ?? []).map((listing) => <div key={listing.id} className="listing-review-item"><div><strong>{listing.title}</strong><span>{listing.material} | {listing.locality}, {listing.city}</span><span>Moderation: {listing.moderationStatus}</span>{listing.aiClassification?.suggestedMaterial ? <span>AI suggested {listing.aiClassification.suggestedMaterial} | {Math.round((listing.aiClassification.confidence || 0) * 100)}%</span> : null}{listing.adminNotes ? <span>Note: {listing.adminNotes}</span> : null}</div><div className="saved-route-actions"><button type="button" className="ghost-button" onClick={() => handleModerateListing(listing.id, 'approved')}>Approve</button><button type="button" className="secondary-button" onClick={() => handleModerateListing(listing.id, 'flagged')}>Flag</button><button type="button" className="ghost-button" onClick={() => handleModerateListing(listing.id, 'rejected')}>Reject</button></div></div>)}</div></div>
       </section>
 
-      <NotificationsPanel notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} />
+      <NotificationsPanel notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleMarkAllNotificationsRead={handleMarkAllNotificationsRead} />
       <ListingFeed title="Admin marketplace feed" kicker="Admin feed" description="Review the moderated marketplace as users see it while keeping download and oversight tools available." listings={filteredListings} currentUser={currentUser} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} />
     </>
   )
@@ -537,6 +678,7 @@ function AppShell({ currentUser, authStatus, handleLogout, children }) {
           <NavLink to="/auth" className={({ isActive }) => `nav-pill${isActive ? ' active' : ''}`}>{currentUser ? 'Account' : 'Login'}</NavLink>
           {currentUser?.role === 'seller' ? <NavLink to="/seller" className={({ isActive }) => `nav-pill${isActive ? ' active' : ''}`}>Seller</NavLink> : null}
           {currentUser?.role === 'recycler' ? <NavLink to="/recycler" className={({ isActive }) => `nav-pill${isActive ? ' active' : ''}`}>Recycler</NavLink> : null}
+          {currentUser ? <NavLink to="/transactions" className={({ isActive }) => `nav-pill${isActive ? ' active' : ''}`}>Transactions</NavLink> : null}
           {currentUser?.role === 'admin' ? <NavLink to="/admin" className={({ isActive }) => `nav-pill${isActive ? ' active' : ''}`}>Admin</NavLink> : null}
         </nav>
         <div className="session-rail">
@@ -584,6 +726,8 @@ function App() {
   const [adminLoading, setAdminLoading] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [transactionHistory, setTransactionHistory] = useState([])
+  const [transactionHistoryLoading, setTransactionHistoryLoading] = useState(false)
   const [recyclerScopedListings, setRecyclerScopedListings] = useState([])
   const [recyclerScopedLoading, setRecyclerScopedLoading] = useState(false)
   const deferredSearch = useDeferredValue(filters.search)
@@ -612,7 +756,7 @@ function App() {
       startTransition(() => {
         setNotifications((current) => {
           if (!currentUser || notification.userId !== currentUser.id) return current
-          return [notification, ...current.filter((item) => item.id !== notification.id)].slice(0, 12)
+          return [notification, ...current.filter((item) => item.id !== notification.id)].slice(0, 50)
         })
       })
     })
@@ -633,6 +777,7 @@ function App() {
       setSavedRoutes([])
       setAdminOverview(null)
       setNotifications([])
+      setTransactionHistory([])
       return
     }
 
@@ -650,6 +795,7 @@ function App() {
         setSavedRoutes([])
         setAdminOverview(null)
         setNotifications([])
+        setTransactionHistory([])
         setAuthStatus('Session expired. Please sign in again.')
       }
     }
@@ -666,7 +812,7 @@ function App() {
     async function loadNotifications() {
       setNotificationsLoading(true)
       try {
-        const response = await fetch(apiUrl('/api/notifications/my'), { headers: { Authorization: `Bearer ${authToken}` } })
+        const response = await fetch(apiUrl('/api/notifications/my?limit=50'), { headers: { Authorization: `Bearer ${authToken}` } })
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.message || 'Could not load notifications.')
         setNotifications(payload)
@@ -679,6 +825,29 @@ function App() {
 
     loadNotifications()
   }, [authToken])
+
+  useEffect(() => {
+    if (!authToken || !currentUser) {
+      setTransactionHistory([])
+      return
+    }
+
+    async function loadTransactionHistory() {
+      setTransactionHistoryLoading(true)
+      try {
+        const response = await fetch(apiUrl('/api/transactions/my'), { headers: { Authorization: `Bearer ${authToken}` } })
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.message || 'Could not load transaction history.')
+        setTransactionHistory(payload)
+      } catch (error) {
+        setStatusMessage(error.message || 'Could not load transaction history.')
+      } finally {
+        setTransactionHistoryLoading(false)
+      }
+    }
+
+    loadTransactionHistory()
+  }, [authToken, currentUser])
 
   useEffect(() => {
     if (!authToken || currentUser?.role !== 'recycler') {
@@ -981,6 +1150,11 @@ function App() {
 
   async function handleAuthSubmit(event) {
     event.preventDefault()
+    const validationMessage = validateAuthForm(authMode, authForm)
+    if (validationMessage) {
+      setAuthStatus(validationMessage)
+      return
+    }
     setAuthSubmitting(true)
     try {
       const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login'
@@ -1007,6 +1181,7 @@ function App() {
     setCurrentUser(null)
     setSavedRoutes([])
     setAdminOverview(null)
+    setTransactionHistory([])
     setRoutePlan(null)
     setAiClassification(null)
     setImageMeta(null)
@@ -1022,8 +1197,9 @@ function App() {
       setSellerLocationStatus('Sign in as a seller to publish listings.')
       return
     }
-    if (!listingForm.coordinates.lat || !listingForm.coordinates.lng) {
-      setSellerLocationStatus('Capture or enter coordinates before publishing the listing.')
+    const validationMessage = validateListingForm(listingForm)
+    if (validationMessage) {
+      setSellerLocationStatus(validationMessage)
       return
     }
     setSubmitting(true)
@@ -1063,6 +1239,13 @@ function App() {
 
     if (!normalizedPickupTime) {
       setStatusMessage('Pickup time is required before claiming a listing.')
+      return
+    }
+
+    const parsedPickupTime = new Date(normalizedPickupTime)
+
+    if (Number.isNaN(parsedPickupTime.getTime())) {
+      setStatusMessage('Pickup time must be a valid date and time.')
       return
     }
 
@@ -1108,6 +1291,18 @@ function App() {
     }
   }
 
+  async function handleMarkAllNotificationsRead() {
+    if (!authToken) return
+    try {
+      const response = await fetch(apiUrl('/api/notifications/read-all'), { method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` } })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.message || 'Could not mark notifications as read.')
+      setNotifications(payload)
+    } catch (error) {
+      setStatusMessage(error.message || 'Could not mark notifications as read.')
+    }
+  }
+
   async function handleDownloadReceipt(listing) {
     try {
       const response = await fetch(apiUrl(`/api/listings/${listing.id}/receipt`), { headers: { Authorization: `Bearer ${authToken}` } })
@@ -1134,6 +1329,7 @@ function App() {
       if (!response.ok) throw new Error(payload.message || 'Could not confirm receipt.')
       setStatusMessage('Receipt confirmed successfully.')
       setListings((current) => current.map((item) => (item.id === payload.id ? payload : item)))
+      setTransactionHistory((current) => [payload, ...current.filter((item) => item.id !== payload.id)].sort((left, right) => new Date(right.transaction?.recordedAt || right.updatedAt || right.createdAt) - new Date(left.transaction?.recordedAt || left.updatedAt || left.createdAt)))
     } catch (error) {
       setStatusMessage(error.message || 'Could not confirm receipt.')
     }
@@ -1142,20 +1338,42 @@ function App() {
   async function handleRecordTransaction(listing) {
     const amountInput = window.prompt(`Enter settlement amount for "${listing.title}"`, String(listing.transaction?.amount || listing.estimatedValue || ''))
     if (amountInput == null) return
-    const paymentMethod = window.prompt('Enter payment method: cash, bank_transfer, or cheque', 'cash') || 'cash'
-    const paymentStatus = window.prompt('Enter payment status: pending or paid', 'paid') || 'paid'
-    const notes = window.prompt('Optional notes for this payment', listing.transaction?.notes || '') || ''
+    const paymentMethod = (window.prompt('Enter payment method: cash, bank_transfer, or cheque', 'cash') || 'cash').trim()
+    const paymentStatus = (window.prompt('Enter payment status: pending or paid', 'paid') || 'paid').trim()
+    const notes = (window.prompt('Optional notes for this payment', listing.transaction?.notes || '') || '').trim()
+    const parsedAmount = Number(amountInput)
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setRecyclerLocationStatus('Enter a settlement amount greater than zero.')
+      return
+    }
+
+    if (!['cash', 'bank_transfer', 'cheque'].includes(paymentMethod)) {
+      setRecyclerLocationStatus('Payment method must be cash, bank_transfer, or cheque.')
+      return
+    }
+
+    if (!['pending', 'paid'].includes(paymentStatus)) {
+      setRecyclerLocationStatus('Payment status must be pending or paid.')
+      return
+    }
+
+    if (notes.length > 280) {
+      setRecyclerLocationStatus('Payment notes must be 280 characters or fewer.')
+      return
+    }
 
     try {
       const response = await fetch(apiUrl(`/api/listings/${listing.id}/transaction`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify({ amount: Number(amountInput), paymentMethod, paymentStatus, notes }),
+        body: JSON.stringify({ amount: parsedAmount, paymentMethod, paymentStatus, notes }),
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.message || 'Could not record transaction.')
       setRecyclerLocationStatus('Transaction details recorded successfully.')
       setListings((current) => current.map((item) => (item.id === payload.id ? payload : item)))
+      setTransactionHistory((current) => [payload, ...current.filter((item) => item.id !== payload.id)].sort((left, right) => new Date(right.transaction?.recordedAt || right.updatedAt || right.createdAt) - new Date(left.transaction?.recordedAt || left.updatedAt || left.createdAt)))
     } catch (error) {
       setRecyclerLocationStatus(error.message || 'Could not record transaction.')
     }
@@ -1244,9 +1462,10 @@ function App() {
       <Routes>
         <Route path="/" element={<PublicHome currentUser={currentUser} summary={summary} statusMessage={statusMessage} unreadNotifications={unreadNotifications} filteredListings={filteredListings} />} />
         <Route path="/auth" element={<AuthPage authMode={authMode} authForm={authForm} setAuthForm={setAuthForm} setAuthMode={setAuthMode} handleAuthSubmit={handleAuthSubmit} authSubmitting={authSubmitting} authStatus={authStatus} currentUser={currentUser} handleLogout={handleLogout} />} />
-        <Route path="/seller" element={<RoleGuard currentUser={currentUser} role="seller"><SellerPage currentUser={currentUser} materials={materials} listingForm={listingForm} setListingForm={setListingForm} imageMeta={imageMeta} aiClassification={aiClassification} classifyingImage={classifyingImage} sellerLocationStatus={sellerLocationStatus} handleSubmit={handleSubmit} handleCaptureSellerLocation={handleCaptureSellerLocation} handlePhotoUpload={handlePhotoUpload} handleAnalyzeWaste={handleAnalyzeWaste} handleApplyAiSuggestion={handleApplyAiSuggestion} submitting={submitting} estimatedPayout={estimatedPayout} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} sellerListings={sellerListings} sellerMetrics={sellerMetrics} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
-        <Route path="/recycler" element={<RoleGuard currentUser={currentUser} role="recycler"><RecyclerPage currentUser={currentUser} filters={filters} setFilters={setFilters} families={families} localities={localities} recyclerLocationStatus={recyclerLocationStatus} handleCaptureRecyclerLocation={handleCaptureRecyclerLocation} routeCandidates={routeCandidates} routePlan={routePlan} handleGenerateRoute={handleGenerateRoute} savedRoutes={savedRoutes} favoriteRoutes={favoriteRoutes} savedRoutesLoading={savedRoutesLoading} handleLoadSavedRoute={handleLoadSavedRoute} handleToggleFavorite={handleToggleFavorite} filteredListings={recyclerFeedListings} recyclerCoordinates={recyclerCoordinates} recyclerMetrics={recyclerMetrics} recyclerScopedLoading={recyclerScopedLoading} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
-        <Route path="/admin" element={<RoleGuard currentUser={currentUser} role="admin"><AdminPage adminOverview={adminOverview} adminLoading={adminLoading} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleModerateListing={handleModerateListing} filteredListings={filteredListings} adminMetrics={adminMetrics} currentUser={currentUser} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
+        <Route path="/seller" element={<RoleGuard currentUser={currentUser} role="seller"><SellerPage currentUser={currentUser} materials={materials} listingForm={listingForm} setListingForm={setListingForm} imageMeta={imageMeta} aiClassification={aiClassification} classifyingImage={classifyingImage} sellerLocationStatus={sellerLocationStatus} handleSubmit={handleSubmit} handleCaptureSellerLocation={handleCaptureSellerLocation} handlePhotoUpload={handlePhotoUpload} handleAnalyzeWaste={handleAnalyzeWaste} handleApplyAiSuggestion={handleApplyAiSuggestion} submitting={submitting} estimatedPayout={estimatedPayout} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleMarkAllNotificationsRead={handleMarkAllNotificationsRead} sellerListings={sellerListings} sellerMetrics={sellerMetrics} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
+        <Route path="/recycler" element={<RoleGuard currentUser={currentUser} role="recycler"><RecyclerPage currentUser={currentUser} filters={filters} setFilters={setFilters} families={families} localities={localities} recyclerLocationStatus={recyclerLocationStatus} handleCaptureRecyclerLocation={handleCaptureRecyclerLocation} routeCandidates={routeCandidates} routePlan={routePlan} handleGenerateRoute={handleGenerateRoute} savedRoutes={savedRoutes} favoriteRoutes={favoriteRoutes} savedRoutesLoading={savedRoutesLoading} handleLoadSavedRoute={handleLoadSavedRoute} handleToggleFavorite={handleToggleFavorite} filteredListings={recyclerFeedListings} recyclerCoordinates={recyclerCoordinates} recyclerMetrics={recyclerMetrics} recyclerScopedLoading={recyclerScopedLoading} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleMarkAllNotificationsRead={handleMarkAllNotificationsRead} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
+        <Route path="/transactions" element={<RoleGuard currentUser={currentUser}><TransactionHistoryPage currentUser={currentUser} transactionHistory={transactionHistory} transactionHistoryLoading={transactionHistoryLoading} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
+        <Route path="/admin" element={<RoleGuard currentUser={currentUser} role="admin"><AdminPage adminOverview={adminOverview} adminLoading={adminLoading} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleMarkAllNotificationsRead={handleMarkAllNotificationsRead} handleModerateListing={handleModerateListing} filteredListings={filteredListings} adminMetrics={adminMetrics} currentUser={currentUser} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

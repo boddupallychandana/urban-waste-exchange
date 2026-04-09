@@ -87,6 +87,28 @@ function parseNumber(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
+function isValidPhone(value) {
+  return /^[0-9+\-\s()]{10,15}$/.test(String(value || '').trim())
+}
+
+function isValidCoordinate(lat, lng) {
+  const parsedLat = parseNumber(lat)
+  const parsedLng = parseNumber(lng)
+
+  return (
+    parsedLat != null &&
+    parsedLng != null &&
+    parsedLat >= -90 &&
+    parsedLat <= 90 &&
+    parsedLng >= -180 &&
+    parsedLng <= 180
+  )
+}
+
 async function reverseGeocode(lat, lng) {
   const url = new URL('https://nominatim.openstreetmap.org/reverse')
   url.searchParams.set('format', 'jsonv2')
@@ -435,6 +457,22 @@ app.post('/api/auth/register', async (req, res, next) => {
     return res.status(400).json({ message: 'All registration fields are required.' })
   }
 
+  if (String(name).trim().length < 3) {
+    return res.status(400).json({ message: 'Full name must be at least 3 characters long.' })
+  }
+
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ message: 'Please enter a valid email address.' })
+  }
+
+  if (!isValidPhone(phone)) {
+    return res.status(400).json({ message: 'Phone number must be 10 to 15 characters and contain only valid phone symbols.' })
+  }
+
+  if (String(password).length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters long.' })
+  }
+
   if (!['seller', 'recycler', 'admin'].includes(role)) {
     return res.status(400).json({ message: 'Invalid role selected.' })
   }
@@ -470,6 +508,14 @@ app.post('/api/auth/login', async (req, res, next) => {
     return res.status(400).json({ message: 'Email and password are required.' })
   }
 
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ message: 'Please enter a valid email address.' })
+  }
+
+  if (String(password).length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters long.' })
+  }
+
   try {
     const user = await User.findOne({ email: email.toLowerCase().trim() })
 
@@ -496,8 +542,27 @@ app.get('/api/auth/me', authenticate, (req, res) => {
 })
 
 app.get('/api/notifications/my', authenticate, async (req, res, next) => {
+  const limit = Math.min(Math.max(Number.parseInt(req.query.limit || '20', 10) || 20, 1), 100)
+  const unreadOnly = req.query.unreadOnly === 'true'
+
   try {
-    const notifications = await Notification.find({ userId: req.user._id }).sort({ createdAt: -1 }).limit(12).lean(false)
+    const filters = { userId: req.user._id }
+
+    if (unreadOnly) {
+      filters.readAt = null
+    }
+
+    const notifications = await Notification.find(filters).sort({ createdAt: -1 }).limit(limit).lean(false)
+    return res.json(notifications.map((notification) => normalizeNotification(notification)))
+  } catch (error) {
+    return next(error)
+  }
+})
+
+app.patch('/api/notifications/read-all', authenticate, async (req, res, next) => {
+  try {
+    await Notification.updateMany({ userId: req.user._id, readAt: null }, { $set: { readAt: new Date() } })
+    const notifications = await Notification.find({ userId: req.user._id }).sort({ createdAt: -1 }).limit(20).lean(false)
     return res.json(notifications.map((notification) => normalizeNotification(notification)))
   } catch (error) {
     return next(error)
@@ -527,6 +592,24 @@ app.patch('/api/notifications/:id/read', authenticate, async (req, res, next) =>
     return next(error)
   }
 })
+
+app.get('/api/transactions/my', authenticate, async (req, res, next) => {
+  try {
+    const filters = { 'transaction.recordedAt': { $ne: null } }
+
+    if (req.user.role === 'seller') {
+      filters.sellerId = req.user._id
+    } else if (req.user.role === 'recycler') {
+      filters['claimedBy.userId'] = req.user._id
+    }
+
+    const listings = await Listing.find(filters).sort({ 'transaction.recordedAt': -1, updatedAt: -1 }).lean(false)
+    return res.json(listings.map((listing) => normalizeListing(listing)))
+  } catch (error) {
+    return next(error)
+  }
+})
+
 app.get('/api/geocode/reverse', async (req, res, next) => {
   const lat = parseNumber(req.query.lat)
   const lng = parseNumber(req.query.lng)
@@ -788,6 +871,22 @@ app.post('/api/listings', authenticate, requireRole('seller'), async (req, res, 
     return res.status(400).json({ message: 'Missing required listing fields.' })
   }
 
+  if (String(title).trim().length < 5) {
+    return res.status(400).json({ message: 'Listing title must be at least 5 characters long.' })
+  }
+
+  if (!materialRates[material]) {
+    return res.status(400).json({ message: 'Please choose a valid material category.' })
+  }
+
+  if (!isValidCoordinate(coordinates?.lat, coordinates?.lng)) {
+    return res.status(400).json({ message: 'Please provide valid latitude and longitude values.' })
+  }
+
+  if (Number(weightKg) <= 0) {
+    return res.status(400).json({ message: 'Weight must be greater than 0 kg.' })
+  }
+
   try {
     const rate = materialRates[material] ?? 20
     let resolvedLocation = {
@@ -953,8 +1052,8 @@ app.patch('/api/listings/:id/transaction', authenticate, requireRole('recycler')
 
   const parsedAmount = parseNumber(amount)
 
-  if (parsedAmount == null || parsedAmount < 0) {
-    return res.status(400).json({ message: 'A valid transaction amount is required.' })
+  if (parsedAmount == null || parsedAmount <= 0) {
+    return res.status(400).json({ message: 'A valid transaction amount greater than zero is required.' })
   }
 
   if (!transactionMethods.includes(paymentMethod)) {
@@ -963,6 +1062,10 @@ app.patch('/api/listings/:id/transaction', authenticate, requireRole('recycler')
 
   if (!transactionStatuses.includes(paymentStatus)) {
     return res.status(400).json({ message: 'Invalid transaction status.' })
+  }
+
+  if (String(notes).trim().length > 280) {
+    return res.status(400).json({ message: 'Transaction notes must be 280 characters or fewer.' })
   }
 
   try {
