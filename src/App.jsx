@@ -300,7 +300,7 @@ function ListingFeed({ title, kicker, description, listings, currentUser, active
                 {listing.status !== 'available' ? (
                   <div className={`contact-block${listing.claimedBy ? '' : ' muted'}`}>
                     <strong>Pickup contact</strong>
-                    {listing.claimedBy ? <><span>{listing.claimedBy.name}</span><span>{listing.claimedBy.phone}</span></> : <span>Claimed contact details will appear here.</span>}
+                    {listing.claimedBy ? <><span>{listing.claimedBy.name}</span><span>{listing.claimedBy.phone}</span>{listing.claimedBy.pickupTime ? <span>Pickup time: {formatTime(listing.claimedBy.pickupTime)}</span> : null}</> : <span>Claimed contact details will appear here.</span>}
                   </div>
                 ) : null}
                 <div className="card-actions">
@@ -1051,9 +1051,31 @@ function App() {
       setAuthStatus('Sign in as a recycler to claim listings.')
       return
     }
+
+    const pickupTime = window.prompt(
+      'Enter pickup date and time in this format: YYYY-MM-DD HH:MM',
+      '',
+    )
+
+    if (pickupTime == null) return
+
+    const normalizedPickupTime = pickupTime.trim().replace(' ', 'T')
+
+    if (!normalizedPickupTime) {
+      setStatusMessage('Pickup time is required before claiming a listing.')
+      return
+    }
+
     setActiveClaimId(listingId)
     try {
-      const response = await fetch(apiUrl(`/api/listings/${listingId}/claim`), { method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` } })
+      const response = await fetch(apiUrl(`/api/listings/${listingId}/claim`), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ pickupTime: normalizedPickupTime }),
+      })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.message || 'Claim failed')
     } catch (error) {

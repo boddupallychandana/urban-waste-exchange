@@ -857,9 +857,20 @@ app.post('/api/listings', authenticate, requireRole('seller'), async (req, res, 
 
 app.patch('/api/listings/:id/claim', authenticate, requireRole('recycler'), async (req, res, next) => {
   const { id } = req.params
+  const { pickupTime } = req.body
 
   if (!mongoose.isValidObjectId(id)) {
     return res.status(404).json({ message: 'Listing not found.' })
+  }
+
+  if (!pickupTime) {
+    return res.status(400).json({ message: 'Pickup time is required when claiming a listing.' })
+  }
+
+  const pickupDate = new Date(pickupTime)
+
+  if (Number.isNaN(pickupDate.getTime())) {
+    return res.status(400).json({ message: 'Pickup time must be a valid date and time.' })
   }
 
   try {
@@ -873,6 +884,7 @@ app.patch('/api/listings/:id/claim', authenticate, requireRole('recycler'), asyn
             name: req.user.name,
             phone: req.user.phone,
             claimedAt: new Date(),
+            pickupTime: pickupDate,
           },
         },
       },
@@ -891,7 +903,7 @@ app.patch('/api/listings/:id/claim', authenticate, requireRole('recycler'), asyn
       listingId: listing._id,
       type: 'listing_claimed',
       title: 'Listing claimed',
-      message: `${req.user.name} claimed your listing "${listing.title}" for pickup.`,
+      message: `${req.user.name} claimed your listing "${listing.title}" for pickup at ${pickupDate.toLocaleString('en-IN')}.`,
     })
     io.emit('listing:updated', payload)
     return res.json(payload)
@@ -1124,6 +1136,7 @@ startServer().catch((error) => {
   console.error(error)
   process.exit(1)
 })
+
 
 
 

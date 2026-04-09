@@ -1,4 +1,4 @@
-﻿import mongoose from 'mongoose'
+import mongoose from 'mongoose'
 
 const claimedBySchema = new mongoose.Schema(
   {
@@ -16,6 +16,10 @@ const claimedBySchema = new mongoose.Schema(
     },
     claimedAt: {
       type: Date,
+    },
+    pickupTime: {
+      type: Date,
+      default: null,
     },
   },
   { _id: false },
