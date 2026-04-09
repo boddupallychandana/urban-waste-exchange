@@ -43,7 +43,7 @@ const defaultFilters = {
   locality: 'All',
   availability: 'All',
   nearbyOnly: false,
-  radiusKm: '5',
+  radiusKm: '10',
 }
 
 const socket = io(SOCKET_URL || undefined, { autoConnect: false })
@@ -263,6 +263,7 @@ function ListingFeed({ title, kicker, description, listings, currentUser, active
           const canRecordTransaction = currentUser?.role === 'recycler' && isClaimedByCurrentRecycler && ['claimed', 'completed'].includes(listing.status)
           const canConfirmReceipt = currentUser?.role === 'seller' && listing.sellerId === currentUser.id && listing.transaction?.paymentStatus === 'paid' && !listing.transaction?.sellerConfirmedAt
           const canDownloadReceipt = Boolean(currentUser) && ((currentUser.role === 'seller' && listing.sellerId === currentUser.id) || (currentUser.role === 'recycler' && isClaimedByCurrentRecycler) || currentUser.role === 'admin') && listing.transaction && (listing.transaction.amount > 0 || listing.transaction.paymentStatus !== 'not_started')
+          const showRecyclerSellerDetails = currentUser?.role === 'recycler'
           return (
             <article key={listing.id} className="listing-card">
               <img src={listing.imageUrl} alt={listing.title} />
@@ -276,8 +277,17 @@ function ListingFeed({ title, kicker, description, listings, currentUser, active
                 <p className="location-line">{listing.addressLabel || `${listing.locality}, ${listing.city}`}</p>
                 <div className="listing-metrics"><span>{listing.material}</span><span>{listing.weightKg} kg</span><span>{formatCurrency(listing.estimatedValue)}</span></div>
                 <div className="distance-strip"><span>{listing.family}</span><span>{formatDistance(listing.computedDistanceKm)}</span></div>
+                {showRecyclerSellerDetails ? (
+                  <div className="contact-block seller-detail-block">
+                    <strong>Seller details</strong>
+                    <span>{listing.sellerName}</span>
+                    <span>{listing.sellerPhone}</span>
+                    <span>{listing.addressLabel || `${listing.locality}, ${listing.city}`}</span>
+                    {listing.coordinates?.lat != null && listing.coordinates?.lng != null ? <span>{listing.coordinates.lat}, {listing.coordinates.lng}</span> : null}
+                  </div>
+                ) : null}
                 {listing.notes ? <p className="notes">{listing.notes}</p> : null}
-                {listing.aiClassification?.suggestedMaterial ? <div className="ai-inline-note"><strong>AI match</strong><span>{listing.aiClassification.suggestedMaterial} � {Math.round((listing.aiClassification.confidence || 0) * 100)}%</span></div> : null}
+                {listing.aiClassification?.suggestedMaterial ? <div className="ai-inline-note"><strong>AI match</strong><span>{listing.aiClassification.suggestedMaterial} | {Math.round((listing.aiClassification.confidence || 0) * 100)}%</span></div> : null}
                 {listing.adminNotes ? <div className="ai-inline-note admin-inline-note"><strong>Admin note</strong><span>{listing.adminNotes}</span></div> : null}
                 {listing.transaction && (listing.transaction.paymentStatus !== 'not_started' || listing.transaction.amount > 0) ? (
                   <div className="ai-inline-note transaction-inline-note">
@@ -310,7 +320,7 @@ function ListingFeed({ title, kicker, description, listings, currentUser, active
 }
 
 function SellerPage(props) {
-  const { currentUser, materials, listingForm, setListingForm, imageMeta, aiClassification, classifyingImage, sellerLocationStatus, handleSubmit, handleCaptureSellerLocation, handlePhotoUpload, handleAnalyzeWaste, handleApplyAiSuggestion, submitting, estimatedPayout, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, sellerListings, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
+  const { currentUser, materials, listingForm, setListingForm, imageMeta, aiClassification, classifyingImage, sellerLocationStatus, handleSubmit, handleCaptureSellerLocation, handlePhotoUpload, handleAnalyzeWaste, handleApplyAiSuggestion, submitting, estimatedPayout, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, sellerListings, sellerMetrics, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
 
   return (
     <>
@@ -329,6 +339,25 @@ function SellerPage(props) {
             <li>{notifications.filter((item) => !item.readAt).length} unread notifications</li>
             <li>{sellerLocationStatus || 'Capture your location before publishing a new listing'}</li>
           </ul>
+        </article>
+      </section>
+
+      <section className="dashboard-metrics-bar seller-metrics">
+        <article className="metric-tile">
+          <strong>{sellerMetrics.total}</strong>
+          <span>Your listings</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{sellerMetrics.available}</strong>
+          <span>Awaiting pickup</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{sellerMetrics.paid}</strong>
+          <span>Paid settlements</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{formatCurrency(sellerMetrics.estimatedValue)}</strong>
+          <span>Estimated listed value</span>
         </article>
       </section>
 
@@ -351,7 +380,7 @@ function SellerPage(props) {
               <label>Longitude<input value={listingForm.coordinates.lng} onChange={(event) => setListingForm((current) => ({ ...current, coordinates: { ...current.coordinates, lng: event.target.value } }))} required /></label>
             </div>
             <div className="location-card"><div className="location-card-header"><div><strong>Pin exact seller location</strong><p>Use browser geolocation to auto-fill coordinates and readable place names.</p></div><button type="button" className="secondary-button" onClick={handleCaptureSellerLocation}>Use my location</button></div><p className="helper-line">{sellerLocationStatus || 'Seller location not captured yet.'}</p></div>
-            <div className="ai-card"><div className="panel-heading"><div><span className="section-kicker">AI assist</span><h2>Waste image classification</h2></div>{imageMeta ? <span className="value-chip">{imageMeta.fileName} � {imageMeta.sizeKb} KB</span> : null}</div><p className="helper-line">Upload a photo, then let the assistant suggest a likely recyclable material before publishing.</p><div className="card-actions"><button type="button" className="secondary-button" onClick={handleAnalyzeWaste} disabled={classifyingImage || !listingForm.imageUrl}>{classifyingImage ? 'Analyzing...' : 'Analyze image'}</button>{aiClassification ? <button type="button" className="ghost-button" onClick={handleApplyAiSuggestion}>Apply suggestion</button> : null}</div>{aiClassification ? <div className="ai-result-card"><strong>{aiClassification.suggestedMaterial}</strong><span>{aiClassification.suggestedFamily} � {Math.round(aiClassification.confidence * 100)}% confidence</span><p>{aiClassification.reason}</p>{aiClassification.alternatives?.length ? <div className="distance-strip">{aiClassification.alternatives.map((alternative) => <span key={alternative.material}>{alternative.material}</span>)}</div> : null}</div> : null}</div>
+            <div className="ai-card"><div className="panel-heading"><div><span className="section-kicker">AI assist</span><h2>Waste image classification</h2></div>{imageMeta ? <span className="value-chip">{imageMeta.fileName} | {imageMeta.sizeKb} KB</span> : null}</div><p className="helper-line">Upload a photo, then let the assistant suggest a likely recyclable material before publishing.</p><div className="card-actions"><button type="button" className="secondary-button" onClick={handleAnalyzeWaste} disabled={classifyingImage || !listingForm.imageUrl}>{classifyingImage ? 'Analyzing...' : 'Analyze image'}</button>{aiClassification ? <button type="button" className="ghost-button" onClick={handleApplyAiSuggestion}>Apply suggestion</button> : null}</div>{aiClassification ? <div className="ai-result-card"><strong>{aiClassification.suggestedMaterial}</strong><span>{aiClassification.suggestedFamily} | {Math.round(aiClassification.confidence * 100)}% confidence</span><p>{aiClassification.reason}</p>{aiClassification.alternatives?.length ? <div className="distance-strip">{aiClassification.alternatives.map((alternative) => <span key={alternative.material}>{alternative.material}</span>)}</div> : null}</div> : null}</div>
             <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Publishing...' : 'Publish listing'}</button>
           </form>
         </article>
@@ -365,7 +394,7 @@ function SellerPage(props) {
 }
 
 function RecyclerPage(props) {
-  const { currentUser, filters, setFilters, families, localities, recyclerLocationStatus, handleCaptureRecyclerLocation, routeCandidates, routePlan, handleGenerateRoute, savedRoutes, favoriteRoutes, savedRoutesLoading, handleLoadSavedRoute, handleToggleFavorite, filteredListings, recyclerCoordinates, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
+  const { currentUser, filters, setFilters, families, localities, recyclerLocationStatus, handleCaptureRecyclerLocation, routeCandidates, routePlan, handleGenerateRoute, savedRoutes, favoriteRoutes, savedRoutesLoading, handleLoadSavedRoute, handleToggleFavorite, filteredListings, recyclerCoordinates, recyclerMetrics, recyclerScopedLoading, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt } = props
 
   return (
     <>
@@ -387,22 +416,41 @@ function RecyclerPage(props) {
         </article>
       </section>
 
+      <section className="dashboard-metrics-bar recycler-metrics">
+        <article className="metric-tile">
+          <strong>{recyclerMetrics.routeReady}</strong>
+          <span>Route-ready pickups</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{recyclerMetrics.claimed}</strong>
+          <span>Claimed by you</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{recyclerMetrics.completed}</strong>
+          <span>Completed pickups</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{recyclerMetrics.savedRoutes}</strong>
+          <span>Saved routes</span>
+        </article>
+      </section>
+
       <section className="dashboard-grid recycler-dashboard">
         <article className="panel">
-          <div className="panel-heading"><div><span className="section-kicker">Recycler tools</span><h2>Nearby pickup planning</h2></div><span className="status-pill">{recyclerLocationStatus || 'Capture recycler location for nearby planning'}</span></div>
+          <div className="panel-heading"><div><span className="section-kicker">Recycler tools</span><h2>Nearby pickup planning</h2></div><span className="status-pill">{recyclerScopedLoading ? 'Loading nearby listings...' : recyclerLocationStatus || 'Capture recycler location for nearby planning'}</span></div>
           <div className="filter-grid">
             <label>Search<input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search material, title, locality" /></label>
             <label>Material family<select value={filters.family} onChange={(event) => setFilters((current) => ({ ...current, family: event.target.value }))}>{families.map((family) => <option key={family} value={family}>{family}</option>)}</select></label>
             <label>Locality<select value={filters.locality} onChange={(event) => setFilters((current) => ({ ...current, locality: event.target.value }))}>{localities.map((locality) => <option key={locality} value={locality}>{locality}</option>)}</select></label>
             <label>Availability<select value={filters.availability} onChange={(event) => setFilters((current) => ({ ...current, availability: event.target.value }))}><option value="All">All</option><option value="available">Available</option><option value="claimed">Claimed</option><option value="completed">Completed</option></select></label>
-            <label>Radius (km)<input type="number" min="1" max="50" value={filters.radiusKm} onChange={(event) => setFilters((current) => ({ ...current, radiusKm: event.target.value }))} /></label>
+            <label>Radius (km)<select value={filters.radiusKm} onChange={(event) => setFilters((current) => ({ ...current, radiusKm: event.target.value, nearbyOnly: true }))}><option value="5">5 km</option><option value="10">10 km</option></select></label>
             <label>Nearby only<select value={filters.nearbyOnly ? 'yes' : 'no'} onChange={(event) => setFilters((current) => ({ ...current, nearbyOnly: event.target.value === 'yes' }))}><option value="no">No</option><option value="yes">Yes</option></select></label>
           </div>
-          <div className="location-card recycler-location-card"><div className="location-card-header"><div><strong>Recycler live location</strong><p>Use current position for nearby filters, map radius, and route optimization.</p></div><button type="button" className="secondary-button" onClick={handleCaptureRecyclerLocation}>Capture recycler location</button></div></div>
+          <div className="location-card recycler-location-card"><div className="location-card-header"><div><strong>Recycler live location</strong><p>Use current position for nearby filters, map radius, and route optimization.</p></div><button type="button" className="secondary-button" onClick={handleCaptureRecyclerLocation}>Capture recycler location</button></div><p className="helper-line">Recycler cards are tuned for nearby supply within a 5 km to 10 km radius.</p></div>
           <div className="workflow-note"><strong>{routeCandidates.length}</strong><span>Listings are route-ready under the current recycler filters.</span><p className="route-helper">Route planning includes available listings plus any claimed pickups assigned to the signed-in recycler.</p></div>
           <button type="button" className="primary-button route-button" onClick={handleGenerateRoute}>Generate optimized route</button>
-          {routePlan ? <div className="route-panel"><strong>{routePlan.name || 'Latest route plan'}</strong><span>{routePlan.stopCount} stops � {routePlan.totalDistanceKm} km total travel</span><div className="route-stops">{routePlan.orderedStops.map((stop, index) => <div key={`${stop.id || stop.listingId}-${index}`} className="route-stop"><strong>{index + 1}. {stop.title}</strong><span>{stop.addressLabel || `${stop.locality}, ${stop.city}`}</span><span>{stop.material} � {stop.legDistanceKm} km leg</span></div>)}</div></div> : null}
-          <div className="saved-routes-panel"><div className="saved-routes-header"><strong>Saved route history</strong><span className="muted-text">{savedRoutesLoading ? 'Loading...' : `${savedRoutes.length} saved plans`}</span></div>{favoriteRoutes.length ? <div className="saved-routes-list">{favoriteRoutes.map((route) => <div key={`favorite-${route.id}`} className="saved-route-card favorite-route-card"><div className="saved-route-meta"><strong>{route.name}</strong><span>{route.stopCount} stops � {route.totalDistanceKm} km</span></div><div className="saved-route-actions"><button type="button" className="ghost-button saved-route-button" onClick={() => handleLoadSavedRoute(route)}>Load template</button><button type="button" className="ghost-button saved-route-button" onClick={() => handleToggleFavorite(route)}>Remove favorite</button></div></div>)}</div> : null}<div className="saved-routes-list">{savedRoutes.map((route) => <div key={route.id} className={`saved-route-card${route.isFavorite ? ' favorite-route-card' : ''}`}><div className="saved-route-meta"><strong>{route.name || formatTime(route.createdAt)}</strong><span>{route.stopCount} stops � {route.totalDistanceKm} km</span></div><span className="muted-text">Start: {route.start?.lat}, {route.start?.lng}</span><div className="saved-route-actions"><button type="button" className="ghost-button saved-route-button" onClick={() => handleLoadSavedRoute(route)}>Reopen route</button><button type="button" className="ghost-button saved-route-button" onClick={() => handleToggleFavorite(route)}>{route.isFavorite ? 'Unfavorite' : 'Favorite'}</button></div></div>)}</div></div>
+          {routePlan ? <div className="route-panel"><strong>{routePlan.name || 'Latest route plan'}</strong><span>{routePlan.stopCount} stops | {routePlan.totalDistanceKm} km total travel</span><div className="route-stops">{routePlan.orderedStops.map((stop, index) => <div key={`${stop.id || stop.listingId}-${index}`} className="route-stop"><strong>{index + 1}. {stop.title}</strong><span>{stop.addressLabel || `${stop.locality}, ${stop.city}`}</span><span>{stop.material} | {stop.legDistanceKm} km leg</span></div>)}</div></div> : null}
+          <div className="saved-routes-panel"><div className="saved-routes-header"><strong>Saved route history</strong><span className="muted-text">{savedRoutesLoading ? 'Loading...' : `${savedRoutes.length} saved plans`}</span></div>{favoriteRoutes.length ? <div className="saved-routes-list">{favoriteRoutes.map((route) => <div key={`favorite-${route.id}`} className="saved-route-card favorite-route-card"><div className="saved-route-meta"><strong>{route.name}</strong><span>{route.stopCount} stops | {route.totalDistanceKm} km</span></div><div className="saved-route-actions"><button type="button" className="ghost-button saved-route-button" onClick={() => handleLoadSavedRoute(route)}>Load template</button><button type="button" className="ghost-button saved-route-button" onClick={() => handleToggleFavorite(route)}>Remove favorite</button></div></div>)}</div> : null}<div className="saved-routes-list">{savedRoutes.map((route) => <div key={route.id} className={`saved-route-card${route.isFavorite ? ' favorite-route-card' : ''}`}><div className="saved-route-meta"><strong>{route.name || formatTime(route.createdAt)}</strong><span>{route.stopCount} stops | {route.totalDistanceKm} km</span></div><span className="muted-text">Start: {route.start?.lat}, {route.start?.lng}</span><div className="saved-route-actions"><button type="button" className="ghost-button saved-route-button" onClick={() => handleLoadSavedRoute(route)}>Reopen route</button><button type="button" className="ghost-button saved-route-button" onClick={() => handleToggleFavorite(route)}>{route.isFavorite ? 'Unfavorite' : 'Favorite'}</button></div></div>)}</div></div>
         </article>
 
         <article className="panel map-panel"><div className="panel-heading"><div><span className="section-kicker">Map view</span><h2>Marketplace geospatial feed</h2></div><span className="value-chip">{filteredListings.length} visible listings</span></div><MarketplaceMap listings={filteredListings} recyclerCoordinates={recyclerCoordinates} selectedRadiusKm={Number(filters.radiusKm) || 5} /></article>
@@ -414,7 +462,7 @@ function RecyclerPage(props) {
   )
 }
 
-function AdminPage({ adminOverview, adminLoading, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, handleModerateListing, filteredListings, currentUser, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt }) {
+function AdminPage({ adminOverview, adminLoading, notifications, notificationsLoading, unreadNotifications, handleMarkNotificationRead, handleModerateListing, filteredListings, adminMetrics, currentUser, activeClaimId, handleClaim, handleComplete, handleRecordTransaction, handleConfirmReceipt, handleDownloadReceipt }) {
   return (
     <>
       <section className="hero-panel dashboard-hero">
@@ -435,6 +483,25 @@ function AdminPage({ adminOverview, adminLoading, notifications, notificationsLo
         </article>
       </section>
 
+      <section className="dashboard-metrics-bar admin-dashboard-metrics">
+        <article className="metric-tile">
+          <strong>{adminMetrics.users}</strong>
+          <span>Total users</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{adminMetrics.listings}</strong>
+          <span>Total listings</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{adminMetrics.flagged}</strong>
+          <span>Flagged listings</span>
+        </article>
+        <article className="metric-tile">
+          <strong>{adminMetrics.paid}</strong>
+          <span>Paid settlements</span>
+        </article>
+      </section>
+
       <section className="panel admin-panel">
         <div className="admin-metrics">
           <article className="admin-metric-card"><strong>{adminOverview?.metrics?.users?.total ?? 0}</strong><span>Registered users</span></article>
@@ -443,10 +510,10 @@ function AdminPage({ adminOverview, adminLoading, notifications, notificationsLo
           <article className="admin-metric-card"><strong>{adminOverview?.metrics?.transactions?.paid ?? 0}</strong><span>Paid settlements</span></article>
         </div>
         <div className="admin-grid">
-          <div className="admin-card"><h3>Recent users</h3><div className="admin-list">{(adminOverview?.users ?? []).map((user) => <div key={user.id} className="admin-list-item"><strong>{user.name}</strong><span>{user.role} � {user.email}</span></div>)}</div></div>
-          <div className="admin-card"><h3>Favorite routes</h3><div className="admin-list">{(adminOverview?.favoriteRoutes ?? []).map((route) => <div key={route.id} className="admin-list-item"><strong>{route.name || route.recyclerName}</strong><span>{route.recyclerName} � {route.stopCount} stops � {route.totalDistanceKm} km</span></div>)}</div></div>
+          <div className="admin-card"><h3>Recent users</h3><div className="admin-list">{(adminOverview?.users ?? []).map((user) => <div key={user.id} className="admin-list-item"><strong>{user.name}</strong><span>{user.role} | {user.email}</span></div>)}</div></div>
+          <div className="admin-card"><h3>Favorite routes</h3><div className="admin-list">{(adminOverview?.favoriteRoutes ?? []).map((route) => <div key={route.id} className="admin-list-item"><strong>{route.name || route.recyclerName}</strong><span>{route.recyclerName} | {route.stopCount} stops | {route.totalDistanceKm} km</span></div>)}</div></div>
         </div>
-        <div className="admin-card"><h3>Listing moderation queue</h3><div className="admin-list">{(adminOverview?.listings ?? []).map((listing) => <div key={listing.id} className="listing-review-item"><div><strong>{listing.title}</strong><span>{listing.material} � {listing.locality}, {listing.city}</span><span>Moderation: {listing.moderationStatus}</span>{listing.aiClassification?.suggestedMaterial ? <span>AI suggested {listing.aiClassification.suggestedMaterial} at {Math.round((listing.aiClassification.confidence || 0) * 100)}%</span> : null}{listing.adminNotes ? <span>Note: {listing.adminNotes}</span> : null}</div><div className="saved-route-actions"><button type="button" className="ghost-button" onClick={() => handleModerateListing(listing.id, 'approved')}>Approve</button><button type="button" className="secondary-button" onClick={() => handleModerateListing(listing.id, 'flagged')}>Flag</button><button type="button" className="ghost-button" onClick={() => handleModerateListing(listing.id, 'rejected')}>Reject</button></div></div>)}</div></div>
+        <div className="admin-card"><h3>Listing moderation queue</h3><div className="admin-list">{(adminOverview?.listings ?? []).map((listing) => <div key={listing.id} className="listing-review-item"><div><strong>{listing.title}</strong><span>{listing.material} | {listing.locality}, {listing.city}</span><span>Moderation: {listing.moderationStatus}</span>{listing.aiClassification?.suggestedMaterial ? <span>AI suggested {listing.aiClassification.suggestedMaterial} | {Math.round((listing.aiClassification.confidence || 0) * 100)}%</span> : null}{listing.adminNotes ? <span>Note: {listing.adminNotes}</span> : null}</div><div className="saved-route-actions"><button type="button" className="ghost-button" onClick={() => handleModerateListing(listing.id, 'approved')}>Approve</button><button type="button" className="secondary-button" onClick={() => handleModerateListing(listing.id, 'flagged')}>Flag</button><button type="button" className="ghost-button" onClick={() => handleModerateListing(listing.id, 'rejected')}>Reject</button></div></div>)}</div></div>
       </section>
 
       <NotificationsPanel notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} />
@@ -475,7 +542,7 @@ function AppShell({ currentUser, authStatus, handleLogout, children }) {
         <div className="session-rail">
           {currentUser ? (
             <>
-              <span className="status-pill">{currentUser.name} � {currentUser.role}</span>
+              <span className="status-pill">{currentUser.name} | {currentUser.role}</span>
               <button type="button" className="ghost-button compact-button" onClick={handleLogout}>Sign out</button>
             </>
           ) : (
@@ -489,6 +556,7 @@ function AppShell({ currentUser, authStatus, handleLogout, children }) {
 }
 
 function App() {
+  const location = useLocation()
   const navigate = useNavigate()
   const [listings, setListings] = useState([])
   const [materials, setMaterials] = useState(fallbackMaterials)
@@ -516,6 +584,8 @@ function App() {
   const [adminLoading, setAdminLoading] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [recyclerScopedListings, setRecyclerScopedListings] = useState([])
+  const [recyclerScopedLoading, setRecyclerScopedLoading] = useState(false)
   const deferredSearch = useDeferredValue(filters.search)
 
   useEffect(() => {
@@ -656,6 +726,65 @@ function App() {
     loadAdminOverview()
   }, [authToken, currentUser])
 
+  useEffect(() => {
+    if (
+      !authToken ||
+      currentUser?.role !== 'recycler' ||
+      location.pathname !== '/recycler' ||
+      !recyclerCoordinates
+    ) {
+      setRecyclerScopedListings([])
+      setRecyclerScopedLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadRecyclerScopedListings() {
+      setRecyclerScopedLoading(true)
+      try {
+        const params = new URLSearchParams({
+          lat: String(recyclerCoordinates.lat),
+          lng: String(recyclerCoordinates.lng),
+          radiusKm: String(Number(filters.radiusKm) || 10),
+        })
+
+        if (filters.family !== 'All') params.set('family', filters.family)
+        if (filters.locality !== 'All') params.set('locality', filters.locality)
+        if (filters.availability !== 'All') params.set('status', filters.availability)
+        if (deferredSearch.trim()) params.set('search', deferredSearch.trim())
+
+        const response = await fetch(apiUrl(`/api/listings?${params.toString()}`), {
+          signal: controller.signal,
+        })
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.message || 'Could not load nearby recycler listings.')
+        setRecyclerScopedListings(payload)
+      } catch (error) {
+        if (error.name === 'AbortError') return
+        setRecyclerLocationStatus(error.message || 'Could not load nearby recycler listings.')
+      } finally {
+        if (!controller.signal.aborted) {
+          setRecyclerScopedLoading(false)
+        }
+      }
+    }
+
+    loadRecyclerScopedListings()
+
+    return () => controller.abort()
+  }, [
+    authToken,
+    currentUser,
+    deferredSearch,
+    filters.availability,
+    filters.family,
+    filters.locality,
+    filters.radiusKm,
+    location.pathname,
+    recyclerCoordinates,
+  ])
+
   const summary = useMemo(() => ({
     total: listings.length,
     available: listings.filter((item) => item.status === 'available').length,
@@ -689,15 +818,75 @@ function App() {
       })
   }, [deferredSearch, filters, listings, recyclerCoordinates])
 
+  const recyclerFeedListings = useMemo(() => {
+    if (
+      currentUser?.role !== 'recycler' ||
+      location.pathname !== '/recycler' ||
+      !recyclerCoordinates
+    ) {
+      return filteredListings
+    }
+
+    const scoped = recyclerScopedListings.map((item) => ({
+      ...item,
+      computedDistanceKm: item.distanceKm ?? calculateDistanceKm(recyclerCoordinates, item.coordinates),
+    }))
+
+    return scoped.sort((left, right) => {
+      if (left.computedDistanceKm == null) return 1
+      if (right.computedDistanceKm == null) return -1
+      return left.computedDistanceKm - right.computedDistanceKm
+    })
+  }, [currentUser, filteredListings, location.pathname, recyclerCoordinates, recyclerScopedListings])
+
   const routeCandidates = useMemo(() => {
     if (!currentUser || currentUser.role !== 'recycler') return []
-    return filteredListings.filter((listing) => listing.coordinates?.lat != null && listing.coordinates?.lng != null && listing.moderationStatus !== 'rejected' && (listing.status === 'available' || (listing.status === 'claimed' && listing.claimedBy?.userId === currentUser.id)))
-  }, [currentUser, filteredListings])
+    return recyclerFeedListings.filter((listing) => listing.coordinates?.lat != null && listing.coordinates?.lng != null && listing.moderationStatus !== 'rejected' && (listing.status === 'available' || (listing.status === 'claimed' && listing.claimedBy?.userId === currentUser.id)))
+  }, [currentUser, recyclerFeedListings])
 
   const sellerListings = useMemo(() => {
     if (!currentUser || currentUser.role !== 'seller') return []
     return filteredListings.filter((listing) => listing.sellerId === currentUser.id)
   }, [currentUser, filteredListings])
+
+  const sellerMetrics = useMemo(
+    () => ({
+      total: sellerListings.length,
+      available: sellerListings.filter((listing) => listing.status === 'available').length,
+      paid: sellerListings.filter((listing) => listing.transaction?.paymentStatus === 'paid').length,
+      estimatedValue: sellerListings.reduce(
+        (sum, listing) => sum + Number(listing.estimatedValue || 0),
+        0,
+      ),
+    }),
+    [sellerListings],
+  )
+
+  const recyclerMetrics = useMemo(
+    () => ({
+      routeReady: routeCandidates.length,
+      claimed: recyclerFeedListings.filter(
+        (listing) =>
+          listing.status === 'claimed' && listing.claimedBy?.userId === currentUser?.id,
+      ).length,
+      completed: recyclerFeedListings.filter(
+        (listing) =>
+          listing.status === 'completed' && listing.claimedBy?.userId === currentUser?.id,
+      ).length,
+      savedRoutes: savedRoutes.length,
+    }),
+    [currentUser, recyclerFeedListings, routeCandidates.length, savedRoutes.length],
+  )
+
+  const adminMetrics = useMemo(
+    () => ({
+      users: adminOverview?.metrics?.users?.total ?? 0,
+      listings: adminOverview?.metrics?.listings?.total ?? 0,
+      flagged: adminOverview?.metrics?.listings?.flagged ?? 0,
+      paid: adminOverview?.metrics?.transactions?.paid ?? 0,
+    }),
+    [adminOverview],
+  )
 
   const selectedMaterial = materials.find((item) => item.name === listingForm.material)
   const estimatedPayout = selectedMaterial ? Math.round((Number(listingForm.weightKg) || 0) * selectedMaterial.ratePerKg) : 0
@@ -777,7 +966,7 @@ function App() {
     requestBrowserLocation(
       async (coords) => {
         setRecyclerCoordinates(coords)
-        setFilters((current) => ({ ...current, nearbyOnly: true }))
+        setFilters((current) => ({ ...current, nearbyOnly: true, radiusKm: '10' }))
         try {
           const place = await reverseGeocode(coords.lat, coords.lng)
           setRecyclerLocationStatus(`Searching near ${place.addressLabel || `${place.locality}, ${place.city}`}`)
@@ -1033,9 +1222,9 @@ function App() {
       <Routes>
         <Route path="/" element={<PublicHome currentUser={currentUser} summary={summary} statusMessage={statusMessage} unreadNotifications={unreadNotifications} filteredListings={filteredListings} />} />
         <Route path="/auth" element={<AuthPage authMode={authMode} authForm={authForm} setAuthForm={setAuthForm} setAuthMode={setAuthMode} handleAuthSubmit={handleAuthSubmit} authSubmitting={authSubmitting} authStatus={authStatus} currentUser={currentUser} handleLogout={handleLogout} />} />
-        <Route path="/seller" element={<RoleGuard currentUser={currentUser} role="seller"><SellerPage currentUser={currentUser} materials={materials} listingForm={listingForm} setListingForm={setListingForm} imageMeta={imageMeta} aiClassification={aiClassification} classifyingImage={classifyingImage} sellerLocationStatus={sellerLocationStatus} handleSubmit={handleSubmit} handleCaptureSellerLocation={handleCaptureSellerLocation} handlePhotoUpload={handlePhotoUpload} handleAnalyzeWaste={handleAnalyzeWaste} handleApplyAiSuggestion={handleApplyAiSuggestion} submitting={submitting} estimatedPayout={estimatedPayout} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} sellerListings={sellerListings} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
-        <Route path="/recycler" element={<RoleGuard currentUser={currentUser} role="recycler"><RecyclerPage currentUser={currentUser} filters={filters} setFilters={setFilters} families={families} localities={localities} recyclerLocationStatus={recyclerLocationStatus} handleCaptureRecyclerLocation={handleCaptureRecyclerLocation} routeCandidates={routeCandidates} routePlan={routePlan} handleGenerateRoute={handleGenerateRoute} savedRoutes={savedRoutes} favoriteRoutes={favoriteRoutes} savedRoutesLoading={savedRoutesLoading} handleLoadSavedRoute={handleLoadSavedRoute} handleToggleFavorite={handleToggleFavorite} filteredListings={filteredListings} recyclerCoordinates={recyclerCoordinates} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
-        <Route path="/admin" element={<RoleGuard currentUser={currentUser} role="admin"><AdminPage adminOverview={adminOverview} adminLoading={adminLoading} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleModerateListing={handleModerateListing} filteredListings={filteredListings} currentUser={currentUser} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
+        <Route path="/seller" element={<RoleGuard currentUser={currentUser} role="seller"><SellerPage currentUser={currentUser} materials={materials} listingForm={listingForm} setListingForm={setListingForm} imageMeta={imageMeta} aiClassification={aiClassification} classifyingImage={classifyingImage} sellerLocationStatus={sellerLocationStatus} handleSubmit={handleSubmit} handleCaptureSellerLocation={handleCaptureSellerLocation} handlePhotoUpload={handlePhotoUpload} handleAnalyzeWaste={handleAnalyzeWaste} handleApplyAiSuggestion={handleApplyAiSuggestion} submitting={submitting} estimatedPayout={estimatedPayout} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} sellerListings={sellerListings} sellerMetrics={sellerMetrics} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
+        <Route path="/recycler" element={<RoleGuard currentUser={currentUser} role="recycler"><RecyclerPage currentUser={currentUser} filters={filters} setFilters={setFilters} families={families} localities={localities} recyclerLocationStatus={recyclerLocationStatus} handleCaptureRecyclerLocation={handleCaptureRecyclerLocation} routeCandidates={routeCandidates} routePlan={routePlan} handleGenerateRoute={handleGenerateRoute} savedRoutes={savedRoutes} favoriteRoutes={favoriteRoutes} savedRoutesLoading={savedRoutesLoading} handleLoadSavedRoute={handleLoadSavedRoute} handleToggleFavorite={handleToggleFavorite} filteredListings={recyclerFeedListings} recyclerCoordinates={recyclerCoordinates} recyclerMetrics={recyclerMetrics} recyclerScopedLoading={recyclerScopedLoading} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
+        <Route path="/admin" element={<RoleGuard currentUser={currentUser} role="admin"><AdminPage adminOverview={adminOverview} adminLoading={adminLoading} notifications={notifications} notificationsLoading={notificationsLoading} unreadNotifications={unreadNotifications} handleMarkNotificationRead={handleMarkNotificationRead} handleModerateListing={handleModerateListing} filteredListings={filteredListings} adminMetrics={adminMetrics} currentUser={currentUser} activeClaimId={activeClaimId} handleClaim={handleClaim} handleComplete={handleComplete} handleRecordTransaction={handleRecordTransaction} handleConfirmReceipt={handleConfirmReceipt} handleDownloadReceipt={handleDownloadReceipt} /></RoleGuard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
