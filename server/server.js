@@ -512,10 +512,6 @@ app.post('/api/auth/login', async (req, res, next) => {
     return res.status(400).json({ message: 'Please enter a valid email address.' })
   }
 
-  if (String(password).length < 6) {
-    return res.status(400).json({ message: 'Password must be at least 6 characters long.' })
-  }
-
   try {
     const user = await User.findOne({ email: email.toLowerCase().trim() })
 
