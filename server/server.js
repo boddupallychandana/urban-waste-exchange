@@ -92,7 +92,7 @@ function isValidEmail(value) {
 }
 
 function isValidPhone(value) {
-  return /^[0-9+\-\s()]{10,15}$/.test(String(value || '').trim())
+  return /^\d{10}$/.test(String(value || '').trim())
 }
 
 function isValidCoordinate(lat, lng) {
@@ -466,7 +466,7 @@ app.post('/api/auth/register', async (req, res, next) => {
   }
 
   if (!isValidPhone(phone)) {
-    return res.status(400).json({ message: 'Phone number must be 10 to 15 characters and contain only valid phone symbols.' })
+    return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' })
   }
 
   if (String(password).length < 6) {

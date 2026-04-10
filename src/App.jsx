@@ -87,7 +87,7 @@ function isValidEmail(value) {
 }
 
 function isValidPhone(value) {
-  return /^[0-9+\-\s()]{10,15}$/.test(String(value || '').trim())
+  return /^\d{10}$/.test(String(value || '').trim())
 }
 
 function isValidCoordinate(lat, lng) {
@@ -101,7 +101,7 @@ function validateAuthForm(authMode, authForm) {
   if (authMode === 'register') {
     if ((authForm.password || '').length < 6) return 'Password must be at least 6 characters long.'
     if ((authForm.name || '').trim().length < 3) return 'Full name must be at least 3 characters long.'
-    if (!isValidPhone(authForm.phone)) return 'Enter a valid 10 to 15 digit phone number.'
+    if (!isValidPhone(authForm.phone)) return 'Enter a valid 10-digit phone number.'
   }
   return ''
 }
